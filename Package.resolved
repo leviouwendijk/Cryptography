@@ -1,0 +1,24 @@
+{
+  "originHash" : "741e360f1c0df5db876b1aa43473f6127da173390d5a2c30f3e97cd0b2c2cb03",
+  "pins" : [
+    {
+      "identity" : "milieu",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/leviouwendijk/Milieu.git",
+      "state" : {
+        "branch" : "master",
+        "revision" : "242e890af20eb5f77087cf116ae9374f1f809b2a"
+      }
+    },
+    {
+      "identity" : "variables",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/leviouwendijk/Variables.git",
+      "state" : {
+        "branch" : "master",
+        "revision" : "c533569cd399d8d4762f5f4f8241e2234735c6d0"
+      }
+    }
+  ],
+  "version" : 3
+}
