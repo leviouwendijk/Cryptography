@@ -366,7 +366,7 @@ extension CryptographicKeyOperation {
 }
 
 extension CryptographicKeyOperation {
-    internal static func keys(
+    public static func keys(
         prefix: String,
         replacer: EnvironmentReplacer = .init(
             replacements: [
