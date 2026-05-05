@@ -171,6 +171,10 @@ public enum CryptographicCATrustedURLSession {
             configuration: configuration
         )
 
+        defer {
+            session.finishTasksAndInvalidate()
+        }
+
         do {
             return try await session.data(for: request)
         } catch let urlError as URLError where urlError.code == .cancelled {
