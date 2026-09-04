@@ -29,7 +29,7 @@ public actor CryptographicCATrustState {
     }
 }
 
-public final class CryptographicCASessionDelegate: NSObject, URLSessionDelegate {
+public final class CryptographicCASessionDelegate: NSObject, URLSessionTaskDelegate {
     public enum PolicyMode: Sendable {
         case strictServerAuth   // enforce normal TLS server usage
         case basicX509          // ignore EKU, just validate chain against CA
@@ -60,6 +60,28 @@ public final class CryptographicCASessionDelegate: NSObject, URLSessionDelegate 
         didReceive challenge: URLAuthenticationChallenge,
         completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
     ) {
+        handleAuthenticationChallenge(
+            challenge,
+            completionHandler: completionHandler
+        )
+    }
+
+    public func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        didReceive challenge: URLAuthenticationChallenge,
+        completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
+    ) {
+        handleAuthenticationChallenge(
+            challenge,
+            completionHandler: completionHandler
+        )
+    }
+
+    private func handleAuthenticationChallenge(
+        _ challenge: URLAuthenticationChallenge,
+        completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
+    ) {
         guard challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust,
               let trust = challenge.protectionSpace.serverTrust
         else {
@@ -81,38 +103,56 @@ public final class CryptographicCASessionDelegate: NSObject, URLSessionDelegate 
 
         switch policyMode {
         case .strictServerAuth:
-            // keep system's SSL policy (this enforces EKU serverAuth etc.)
+            // Keep the system SSL policy, including server-auth usage checks.
             break
 
         case .basicX509:
-            // behave more like OpenSSL/Node: validate chain against CA only
+            // Validate the chain against the configured CA without EKU policy.
             let policy = SecPolicyCreateBasicX509()
             SecTrustSetPolicies(trust, policy)
         }
 
-        // Pin our CA as anchor
-        SecTrustSetAnchorCertificates(trust, [caCertificate] as CFArray)
-        SecTrustSetAnchorCertificatesOnly(trust, anchorOnly)
+        SecTrustSetAnchorCertificates(
+            trust,
+            [caCertificate] as CFArray
+        )
+        SecTrustSetAnchorCertificatesOnly(
+            trust,
+            anchorOnly
+        )
 
         var cfError: CFError?
-        let ok = SecTrustEvaluateWithError(trust, &cfError)
+        let ok = SecTrustEvaluateWithError(
+            trust,
+            &cfError
+        )
 
         if ok {
             Task { await trustState.set(nil) }
-            let credential = URLCredential(trust: trust)
-            completionHandler(.useCredential, credential)
-        } else {
-            let description: String
-            if let cfError {
-                description = CFErrorCopyDescription(cfError) as String
-            } else {
-                description = "Unknown trust error"
-            }
-
-            let err = CryptographicCATrustError.trustEvaluationFailed(description)
-            Task { await trustState.set(err) }
-            completionHandler(.cancelAuthenticationChallenge, nil)
+            completionHandler(
+                .useCredential,
+                URLCredential(trust: trust)
+            )
+            return
         }
+
+        let description: String
+        if let cfError {
+            description =
+                CFErrorCopyDescription(cfError) as String
+        } else {
+            description = "Unknown trust error"
+        }
+
+        let err =
+            CryptographicCATrustError
+                .trustEvaluationFailed(description)
+
+        Task { await trustState.set(err) }
+        completionHandler(
+            .cancelAuthenticationChallenge,
+            nil
+        )
     }
 }
 
@@ -152,6 +192,60 @@ public enum CryptographicCATrustedURLSession {
             policyMode: policyMode,
             configuration: configuration
         )
+    }
+
+    /// Run work with a CA-trusted URLSession and its exact task delegate.
+    ///
+    /// Use this overload for async Foundation APIs such as
+    /// `bytes(for:delegate:)` which accept a task-specific delegate.
+    /// The existing trust actor remains authoritative for diagnostic state.
+    public static func withSession<Result>(
+        caCertificatePathSymbol: String,
+        allowedHost: String? = nil,
+        anchorOnly: Bool = true,
+        policyMode: CryptographicCASessionDelegate.PolicyMode = .strictServerAuth,
+        configuration: URLSessionConfiguration = .ephemeral,
+        operation: (
+            URLSession,
+            CryptographicCASessionDelegate
+        ) async throws -> Result
+    ) async throws -> Result {
+        let caPath = try EnvironmentExtractor.value(
+            .symbol(caCertificatePathSymbol)
+        )
+        let caCertificate =
+            try CryptographicTLSCertificateLoader
+                .loadCertificate(at: caPath)
+
+        let state = CryptographicCATrustState()
+        let delegate = CryptographicCASessionDelegate(
+            caCertificate: caCertificate,
+            allowedHost: allowedHost,
+            anchorOnly: anchorOnly,
+            trustState: state,
+            policyMode: policyMode
+        )
+        let session = URLSession(
+            configuration: configuration,
+            delegate: delegate,
+            delegateQueue: nil
+        )
+
+        defer {
+            session.finishTasksAndInvalidate()
+        }
+
+        do {
+            return try await operation(
+                session,
+                delegate
+            )
+        } catch {
+            if let trustError = await state.take() {
+                throw trustError
+            }
+            throw error
+        }
     }
 
     /// Run work with a CA-trusted URLSession while keeping creation,
