@@ -154,15 +154,19 @@ public enum CryptographicCATrustedURLSession {
         )
     }
 
-    /// Convenience: run a request and surface TLS trust errors instead of bare `.cancelled`.
-    public static func data(
-        for request: URLRequest,
+    /// Run work with a CA-trusted URLSession while keeping creation,
+    /// trust-error propagation, and session invalidation inside Cryptography.
+    ///
+    /// The operation may remain suspended while consuming a streaming response;
+    /// the session is invalidated only after the operation completes or throws.
+    public static func withSession<Result>(
         caCertificatePathSymbol: String,
         allowedHost: String? = nil,
         anchorOnly: Bool = true,
         policyMode: CryptographicCASessionDelegate.PolicyMode = .strictServerAuth,
-        configuration: URLSessionConfiguration = .ephemeral
-    ) async throws -> (Data, URLResponse) {
+        configuration: URLSessionConfiguration = .ephemeral,
+        operation: (URLSession) async throws -> Result
+    ) async throws -> Result {
         let (session, state) = try create(
             caCertificatePathSymbol: caCertificatePathSymbol,
             allowedHost: allowedHost,
@@ -176,12 +180,32 @@ public enum CryptographicCATrustedURLSession {
         }
 
         do {
-            return try await session.data(for: request)
-        } catch let urlError as URLError where urlError.code == .cancelled {
+            return try await operation(session)
+        } catch {
             if let trustError = await state.take() {
                 throw trustError
             }
-            throw urlError
+            throw error
+        }
+    }
+
+    /// Convenience: run a request and surface TLS trust errors instead of bare `.cancelled`.
+    public static func data(
+        for request: URLRequest,
+        caCertificatePathSymbol: String,
+        allowedHost: String? = nil,
+        anchorOnly: Bool = true,
+        policyMode: CryptographicCASessionDelegate.PolicyMode = .strictServerAuth,
+        configuration: URLSessionConfiguration = .ephemeral
+    ) async throws -> (Data, URLResponse) {
+        try await withSession(
+            caCertificatePathSymbol: caCertificatePathSymbol,
+            allowedHost: allowedHost,
+            anchorOnly: anchorOnly,
+            policyMode: policyMode,
+            configuration: configuration
+        ) { session in
+            try await session.data(for: request)
         }
     }
 }
