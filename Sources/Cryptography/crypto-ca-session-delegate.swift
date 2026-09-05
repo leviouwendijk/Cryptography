@@ -13,19 +13,26 @@ public enum CryptographicCATrustError: Error, LocalizedError {
     }
 }
 
-public actor CryptographicCATrustState {
+public final class CryptographicCATrustState: @unchecked Sendable {
+    private let lock = NSLock()
     private var lastError: CryptographicCATrustError?
 
     public init() {}
 
     public func set(_ error: CryptographicCATrustError?) {
+        lock.lock()
+        defer { lock.unlock() }
+
         lastError = error
     }
 
     public func take() -> CryptographicCATrustError? {
-        let e = lastError
+        lock.lock()
+        defer { lock.unlock() }
+
+        let error = lastError
         lastError = nil
-        return e
+        return error
     }
 }
 
@@ -95,7 +102,7 @@ public final class CryptographicCASessionDelegate: NSObject, URLSessionTaskDeleg
                 let err = CryptographicCATrustError.trustEvaluationFailed(
                     "Host mismatch. Expected \(allowedHost), got \(host)"
                 )
-                Task { await trustState.set(err) }
+                trustState.set(err)
                 completionHandler(.cancelAuthenticationChallenge, nil)
                 return
             }
@@ -128,7 +135,6 @@ public final class CryptographicCASessionDelegate: NSObject, URLSessionTaskDeleg
         )
 
         if ok {
-            Task { await trustState.set(nil) }
             completionHandler(
                 .useCredential,
                 URLCredential(trust: trust)
@@ -148,7 +154,7 @@ public final class CryptographicCASessionDelegate: NSObject, URLSessionTaskDeleg
             CryptographicCATrustError
                 .trustEvaluationFailed(description)
 
-        Task { await trustState.set(err) }
+        trustState.set(err)
         completionHandler(
             .cancelAuthenticationChallenge,
             nil
@@ -198,7 +204,7 @@ public enum CryptographicCATrustedURLSession {
     ///
     /// Use this overload for async Foundation APIs such as
     /// `bytes(for:delegate:)` which accept a task-specific delegate.
-    /// The existing trust actor remains authoritative for diagnostic state.
+    /// The synchronized trust state remains authoritative for diagnostic state.
     public static func withSession<Result>(
         caCertificatePathSymbol: String,
         allowedHost: String? = nil,
@@ -241,7 +247,7 @@ public enum CryptographicCATrustedURLSession {
                 delegate
             )
         } catch {
-            if let trustError = await state.take() {
+            if let trustError = state.take() {
                 throw trustError
             }
             throw error
@@ -276,7 +282,7 @@ public enum CryptographicCATrustedURLSession {
         do {
             return try await operation(session)
         } catch {
-            if let trustError = await state.take() {
+            if let trustError = state.take() {
                 throw trustError
             }
             throw error
