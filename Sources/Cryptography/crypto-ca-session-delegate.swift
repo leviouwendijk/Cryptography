@@ -1,8 +1,15 @@
+import Errors
 import Foundation
 import Security
 import Milieu
 
-public enum CryptographicCATrustError: Error, LocalizedError {
+public enum CryptographicCATrustError:
+    Error,
+    LocalizedError,
+    Sendable,
+    Codable,
+    Hashable
+{
     case trustEvaluationFailed(String)
 
     public var errorDescription: String? {
@@ -13,17 +20,89 @@ public enum CryptographicCATrustError: Error, LocalizedError {
     }
 }
 
+public struct CryptographicCATrustSnapshot:
+    Sendable,
+    Codable,
+    Hashable
+{
+    public let challengeCount: Int
+    public let evaluationCount: Int
+    public let lastHost: String?
+    public let lastAuthenticationMethod: String?
+    public let lastEvaluationSucceeded: Bool?
+    public let lastError: CryptographicCATrustError?
+
+    public init(
+        challengeCount: Int,
+        evaluationCount: Int,
+        lastHost: String?,
+        lastAuthenticationMethod: String?,
+        lastEvaluationSucceeded: Bool?,
+        lastError: CryptographicCATrustError?
+    ) {
+        self.challengeCount = challengeCount
+        self.evaluationCount = evaluationCount
+        self.lastHost = lastHost
+        self.lastAuthenticationMethod = lastAuthenticationMethod
+        self.lastEvaluationSucceeded = lastEvaluationSucceeded
+        self.lastError = lastError
+    }
+}
+
 public final class CryptographicCATrustState: @unchecked Sendable {
     private let lock = NSLock()
+    private var challengeCount = 0
+    private var evaluationCount = 0
+    private var lastHost: String?
+    private var lastAuthenticationMethod: String?
+    private var lastEvaluationSucceeded: Bool?
     private var lastError: CryptographicCATrustError?
 
     public init() {}
+
+    public func recordChallenge(
+        host: String,
+        authenticationMethod: String
+    ) {
+        lock.lock()
+        defer { lock.unlock() }
+
+        challengeCount += 1
+        lastHost = host
+        lastAuthenticationMethod = authenticationMethod
+    }
+
+    public func recordEvaluation(
+        succeeded: Bool,
+        error: CryptographicCATrustError?
+    ) {
+        lock.lock()
+        defer { lock.unlock() }
+
+        evaluationCount += 1
+        lastEvaluationSucceeded = succeeded
+        lastError = error
+    }
 
     public func set(_ error: CryptographicCATrustError?) {
         lock.lock()
         defer { lock.unlock() }
 
         lastError = error
+    }
+
+    public func snapshot() -> CryptographicCATrustSnapshot {
+        lock.lock()
+        defer { lock.unlock() }
+
+        return CryptographicCATrustSnapshot(
+            challengeCount: challengeCount,
+            evaluationCount: evaluationCount,
+            lastHost: lastHost,
+            lastAuthenticationMethod: lastAuthenticationMethod,
+            lastEvaluationSucceeded: lastEvaluationSucceeded,
+            lastError: lastError
+        )
     }
 
     public func take() -> CryptographicCATrustError? {
@@ -33,6 +112,142 @@ public final class CryptographicCATrustState: @unchecked Sendable {
         let error = lastError
         lastError = nil
         return error
+    }
+}
+
+public struct CryptographicCATrustedURLSessionFailure:
+    Error,
+    PresentableError,
+    ErrorIdentityProviding,
+    ErrorDiagnosticFieldsProviding,
+    ErrorRelationsProviding
+{
+    public let underlying: any Error
+    public let trust: CryptographicCATrustSnapshot
+    public let caCertificatePathSymbol: String
+    public let allowedHost: String?
+    public let anchorOnly: Bool
+    public let policyMode: CryptographicCASessionDelegate.PolicyMode
+
+    public init(
+        underlying: any Error,
+        trust: CryptographicCATrustSnapshot,
+        caCertificatePathSymbol: String,
+        allowedHost: String?,
+        anchorOnly: Bool,
+        policyMode: CryptographicCASessionDelegate.PolicyMode
+    ) {
+        self.underlying = underlying
+        self.trust = trust
+        self.caCertificatePathSymbol = caCertificatePathSymbol
+        self.allowedHost = allowedHost
+        self.anchorOnly = anchorOnly
+        self.policyMode = policyMode
+    }
+
+    public var errorIdentity: ErrorIdentity {
+        .init(
+            namespace: "cryptography.privateca",
+            code: "requestfailed"
+        )
+    }
+
+    public var errorPresentation: ErrorPresentation {
+        .init(
+            title: "Private-CA request failed",
+            message:
+                trust.lastError?.localizedDescription
+                ?? underlying.localizedDescription,
+            reason:
+                trust.lastError == nil
+                ? "The request failed without a recorded private-CA trust rejection."
+                : "The private-CA trust delegate recorded a trust rejection.",
+            recoverySuggestion:
+                "Inspect the trust diagnostics and underlying error chain."
+        )
+    }
+
+    public var errorDiagnosticFields: [ErrorDiagnosticField] {
+        [
+            .init(
+                key: "tls.cacertificatepathsymbol",
+                value: caCertificatePathSymbol
+            ),
+            .init(
+                key: "tls.allowedhost",
+                value: allowedHost ?? "<none>"
+            ),
+            .init(
+                key: "tls.anchoronly",
+                value: String(anchorOnly)
+            ),
+            .init(
+                key: "tls.policymode",
+                value: policyModeName
+            ),
+            .init(
+                key: "tls.challengereceived",
+                value: String(trust.challengeCount > 0)
+            ),
+            .init(
+                key: "tls.challengecount",
+                value: String(trust.challengeCount)
+            ),
+            .init(
+                key: "tls.lasthost",
+                value: trust.lastHost ?? "<none>"
+            ),
+            .init(
+                key: "tls.lastauthenticationmethod",
+                value: trust.lastAuthenticationMethod ?? "<none>"
+            ),
+            .init(
+                key: "tls.evaluationattempted",
+                value: String(trust.evaluationCount > 0)
+            ),
+            .init(
+                key: "tls.evaluationcount",
+                value: String(trust.evaluationCount)
+            ),
+            .init(
+                key: "tls.lastevaluationsucceeded",
+                value:
+                    trust.lastEvaluationSucceeded.map(String.init)
+                    ?? "<not-evaluated>"
+            ),
+            .init(
+                key: "tls.trusterrorpresent",
+                value: String(trust.lastError != nil)
+            ),
+        ]
+    }
+
+    public var errorRelations: [ErrorRelation] {
+        var relations: [ErrorRelation] = [
+            .underlying(
+                underlying
+            ),
+        ]
+
+        if let trustError = trust.lastError {
+            relations.append(
+                .related(
+                    trustError
+                )
+            )
+        }
+
+        return relations
+    }
+
+    private var policyModeName: String {
+        switch policyMode {
+        case .strictServerAuth:
+            return "strictServerAuth"
+
+        case .basicX509:
+            return "basicX509"
+        }
     }
 }
 
@@ -89,6 +304,12 @@ public final class CryptographicCASessionDelegate: NSObject, URLSessionTaskDeleg
         _ challenge: URLAuthenticationChallenge,
         completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
     ) {
+        trustState.recordChallenge(
+            host: challenge.protectionSpace.host,
+            authenticationMethod:
+                challenge.protectionSpace.authenticationMethod
+        )
+
         guard challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust,
               let trust = challenge.protectionSpace.serverTrust
         else {
@@ -135,6 +356,10 @@ public final class CryptographicCASessionDelegate: NSObject, URLSessionTaskDeleg
         )
 
         if ok {
+            trustState.recordEvaluation(
+                succeeded: true,
+                error: nil
+            )
             completionHandler(
                 .useCredential,
                 URLCredential(trust: trust)
@@ -154,7 +379,10 @@ public final class CryptographicCASessionDelegate: NSObject, URLSessionTaskDeleg
             CryptographicCATrustError
                 .trustEvaluationFailed(description)
 
-        trustState.set(err)
+        trustState.recordEvaluation(
+            succeeded: false,
+            error: err
+        )
         completionHandler(
             .cancelAuthenticationChallenge,
             nil
@@ -163,6 +391,24 @@ public final class CryptographicCASessionDelegate: NSObject, URLSessionTaskDeleg
 }
 
 public enum CryptographicCATrustedURLSession {
+    private static func requestFailure(
+        _ error: any Error,
+        state: CryptographicCATrustState,
+        caCertificatePathSymbol: String,
+        allowedHost: String?,
+        anchorOnly: Bool,
+        policyMode: CryptographicCASessionDelegate.PolicyMode
+    ) -> CryptographicCATrustedURLSessionFailure {
+        CryptographicCATrustedURLSessionFailure(
+            underlying: error,
+            trust: state.snapshot(),
+            caCertificatePathSymbol: caCertificatePathSymbol,
+            allowedHost: allowedHost,
+            anchorOnly: anchorOnly,
+            policyMode: policyMode
+        )
+    }
+
     public static func create(
         caCertificate: SecCertificate,
         allowedHost: String? = nil,
@@ -247,10 +493,15 @@ public enum CryptographicCATrustedURLSession {
                 delegate
             )
         } catch {
-            if let trustError = state.take() {
-                throw trustError
-            }
-            throw error
+            throw requestFailure(
+                error,
+                state: state,
+                caCertificatePathSymbol:
+                    caCertificatePathSymbol,
+                allowedHost: allowedHost,
+                anchorOnly: anchorOnly,
+                policyMode: policyMode
+            )
         }
     }
 
@@ -282,14 +533,19 @@ public enum CryptographicCATrustedURLSession {
         do {
             return try await operation(session)
         } catch {
-            if let trustError = state.take() {
-                throw trustError
-            }
-            throw error
+            throw requestFailure(
+                error,
+                state: state,
+                caCertificatePathSymbol:
+                    caCertificatePathSymbol,
+                allowedHost: allowedHost,
+                anchorOnly: anchorOnly,
+                policyMode: policyMode
+            )
         }
     }
 
-    /// Convenience: run a request and surface TLS trust errors instead of bare `.cancelled`.
+    /// Convenience: run a request and preserve private-CA trust diagnostics alongside the underlying transport failure.
     public static func data(
         for request: URLRequest,
         caCertificatePathSymbol: String,

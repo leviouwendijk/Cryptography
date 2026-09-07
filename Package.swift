@@ -16,12 +16,14 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/leviouwendijk/Milieu.git", branch: "master"),
+        .package(url: "https://github.com/leviouwendijk/Errors.git", branch: "master"),
     ],
     targets: [
         .target(
             name: "Cryptography",
             dependencies: [
                 .product(name: "Milieu", package: "Milieu"),
+                .product(name: "Errors", package: "Errors"),
             ]
         ),
         .testTarget(
