@@ -298,57 +298,57 @@ public struct CryptographicCATrustedURLSessionFailure:
     public var errorDiagnosticFields: [ErrorDiagnosticField] {
         var fields: [ErrorDiagnosticField] = [
             .init(
-                key: "tls.cacertificatepathsymbol",
+                key: "tls.ca_certificate_path_symbol",
                 value: caCertificatePathSymbol
             ),
             .init(
-                key: "tls.allowedhost",
+                key: "tls.allowed_host",
                 value: allowedHost ?? "<none>"
             ),
             .init(
-                key: "tls.anchoronly",
+                key: "tls.anchor_only",
                 value: String(anchorOnly)
             ),
             .init(
-                key: "tls.policymode",
+                key: "tls.policy_mode",
                 value: policyModeName
             ),
             .init(
-                key: "tls.challengereceived",
+                key: "tls.challenge_received",
                 value: String(trust.challengeCount > 0)
             ),
             .init(
-                key: "tls.challengecount",
+                key: "tls.challenge_count",
                 value: String(trust.challengeCount)
             ),
             .init(
-                key: "tls.lasthost",
+                key: "tls.last_host",
                 value: trust.lastHost ?? "<none>"
             ),
             .init(
-                key: "tls.lastauthenticationmethod",
+                key: "tls.last_authentication_method",
                 value: trust.lastAuthenticationMethod ?? "<none>"
             ),
             .init(
-                key: "tls.evaluationattempted",
+                key: "tls.evaluation_attempted",
                 value: String(trust.evaluationCount > 0)
             ),
             .init(
-                key: "tls.evaluationcount",
+                key: "tls.evaluation_count",
                 value: String(trust.evaluationCount)
             ),
             .init(
-                key: "tls.lastevaluationsucceeded",
+                key: "tls.last_evaluation_succeeded",
                 value:
                     trust.lastEvaluationSucceeded.map(String.init)
                     ?? "<not-evaluated>"
             ),
             .init(
-                key: "tls.trusterrorpresent",
+                key: "tls.trust_error_present",
                 value: String(trust.lastError != nil)
             ),
             metricField(
-                "urlsession.metricscollectioncount",
+                "url_session.metrics_collection_count",
                 String(trust.metricsCollectionCount)
             ),
         ]
@@ -356,7 +356,7 @@ public struct CryptographicCATrustedURLSessionFailure:
         guard let metrics = trust.lastTaskMetrics else {
             fields.append(
                 metricField(
-                    "urlsession.metricspresent",
+                    "url_session.metrics_present",
                     "false"
                 )
             )
@@ -365,27 +365,27 @@ public struct CryptographicCATrustedURLSessionFailure:
 
         fields.append(contentsOf: [
             metricField(
-                "urlsession.metricspresent",
+                "url_session.metrics_present",
                 "true"
             ),
             metricField(
-                "urlsession.task.start",
+                "url_session.task.start",
                 String(metrics.taskStartTime)
             ),
             metricField(
-                "urlsession.task.end",
+                "url_session.task.end",
                 String(metrics.taskEndTime)
             ),
             metricField(
-                "urlsession.task.duration",
+                "url_session.task.duration",
                 String(metrics.taskDuration)
             ),
             metricField(
-                "urlsession.redirectcount",
+                "url_session.redirect_count",
                 String(metrics.redirectCount)
             ),
             metricField(
-                "urlsession.transactioncount",
+                "url_session.transaction_count",
                 String(metrics.transactions.count)
             ),
         ])
@@ -394,105 +394,105 @@ public struct CryptographicCATrustedURLSessionFailure:
             metrics.transactions.enumerated()
         {
             let prefix =
-                "urlsession.transaction.\(index)."
+                "url_session.transaction.\(index)."
 
             fields.append(contentsOf: [
                 metricField(
-                    prefix + "fetchstart",
+                    prefix + "fetch_start",
                     metricValue(transaction.fetchStartTime)
                 ),
                 metricField(
-                    prefix + "dnsstart",
+                    prefix + "dns_start",
                     metricValue(
                         transaction.domainLookupStartTime
                     )
                 ),
                 metricField(
-                    prefix + "dnsend",
+                    prefix + "dns_end",
                     metricValue(
                         transaction.domainLookupEndTime
                     )
                 ),
                 metricField(
-                    prefix + "connectstart",
+                    prefix + "connect_start",
                     metricValue(transaction.connectStartTime)
                 ),
                 metricField(
-                    prefix + "secureconnectionstart",
+                    prefix + "secure_connection_start",
                     metricValue(
                         transaction.secureConnectionStartTime
                     )
                 ),
                 metricField(
-                    prefix + "secureconnectionend",
+                    prefix + "secure_connection_end",
                     metricValue(
                         transaction.secureConnectionEndTime
                     )
                 ),
                 metricField(
-                    prefix + "connectend",
+                    prefix + "connect_end",
                     metricValue(transaction.connectEndTime)
                 ),
                 metricField(
-                    prefix + "requeststart",
+                    prefix + "request_start",
                     metricValue(transaction.requestStartTime)
                 ),
                 metricField(
-                    prefix + "requestend",
+                    prefix + "request_end",
                     metricValue(transaction.requestEndTime)
                 ),
                 metricField(
-                    prefix + "responsestart",
+                    prefix + "response_start",
                     metricValue(transaction.responseStartTime)
                 ),
                 metricField(
-                    prefix + "responseend",
+                    prefix + "response_end",
                     metricValue(transaction.responseEndTime)
                 ),
                 metricField(
-                    prefix + "networkprotocol",
+                    prefix + "network_protocol",
                     metricValue(transaction.networkProtocolName)
                 ),
                 metricField(
-                    prefix + "remoteaddress",
+                    prefix + "remote_address",
                     metricValue(transaction.remoteAddress),
-                    sensitivity: .potentiallySensitive
+                    sensitivity: .potentially_sensitive
                 ),
                 metricField(
-                    prefix + "remoteport",
+                    prefix + "remote_port",
                     metricValue(transaction.remotePort)
                 ),
                 metricField(
-                    prefix + "localaddress",
+                    prefix + "local_address",
                     metricValue(transaction.localAddress),
-                    sensitivity: .potentiallySensitive
+                    sensitivity: .potentially_sensitive
                 ),
                 metricField(
-                    prefix + "localport",
+                    prefix + "local_port",
                     metricValue(transaction.localPort)
                 ),
                 metricField(
-                    prefix + "tlsprotocolversion",
+                    prefix + "tls_protocol_version",
                     metricValue(
                         transaction.negotiatedTLSProtocolVersion
                     )
                 ),
                 metricField(
-                    prefix + "tlsciphersuite",
+                    prefix + "tls_cipher_suite",
                     metricValue(
                         transaction.negotiatedTLSCipherSuite
                     )
                 ),
                 metricField(
-                    prefix + "proxyconnection",
+                    prefix + "proxy_connection",
                     String(transaction.isProxyConnection)
                 ),
                 metricField(
-                    prefix + "reusedconnection",
+                    prefix + "reused_connection",
                     String(transaction.isReusedConnection)
                 ),
                 metricField(
-                    prefix + "resourcefetchtype",
+                    prefix + "resource_fetch_type",
                     transaction.resourceFetchType
                 ),
             ])
@@ -504,7 +504,7 @@ public struct CryptographicCATrustedURLSessionFailure:
     private func metricField(
         _ key: String,
         _ value: String,
-        sensitivity: ErrorDiagnosticField.Sensitivity = .ordinary
+        sensitivity: ErrorSensitivity = .ordinary
     ) -> ErrorDiagnosticField {
         .init(
             key: ErrorDiagnosticKey(
