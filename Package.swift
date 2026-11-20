@@ -26,9 +26,5 @@ let package = Package(
                 .product(name: "Errors", package: "Errors"),
             ]
         ),
-        .testTarget(
-            name: "CryptographyTests",
-            dependencies: ["Cryptography"]
-        ),
     ]
 )
